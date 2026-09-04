@@ -13,7 +13,7 @@ from typing import List, Dict, Optional
 
 import pandas as pd
 
-from data_fetcher import get_stock_list, get_stock_daily
+from data_fetcher import get_stock_list, get_stock_daily, get_stock_daily_pool, init_bs_pool, close_bs_pool
 from indicators import (
     calculate_macd,
     calculate_kdj,
@@ -53,10 +53,17 @@ class StockSelector:
         self.min_volume = min_volume  # 单位: 亿元
         self.max_stocks = max_stocks  # 最多检查的股票数
 
-    def screen_one_stock(self, code: str, name: str) -> Optional[Dict]:
-        """筛选单只股票（每次调用独立 login/logout，可安全用于多线程）"""
+    def screen_one_stock(self, code: str, name: str, use_pool: bool = False) -> Optional[Dict]:
+        """筛选单只股票
+
+        Args:
+            use_pool: True=使用共享连接池（批量选股），False=独立连接（单次调用）
+        """
         # 获取日线数据
-        df = get_stock_daily(code)
+        if use_pool:
+            df = get_stock_daily_pool(code)
+        else:
+            df = get_stock_daily(code)
         if len(df) < 30:
             return None
 
@@ -140,17 +147,20 @@ class StockSelector:
         select_progress["found"] = 0
         select_progress["message"] = f"正在筛选 {total_candidates} 只候选股票..."
 
-        # 多线程并发查询
+        # 多线程并发查询（使用共享连接池，避免 baostock 拉黑）
         results = []
-        max_workers = 8  # 并发线程数
+        max_workers = 8  # 并发线程数（实际查询串行，计算并行）
         print(f"🚀 启动 {max_workers} 个线程并发查询...")
 
+        # 初始化共享连接池
+        init_bs_pool()
+
         def _check_one(stock):
-            """工作线程函数：检查单只股票，返回 (code, name, result_or_None)"""
+            """工作线程函数：检查单只股票"""
             try:
                 code = stock['code']
                 name = stock['name']
-                result = self.screen_one_stock(code, name)
+                result = self.screen_one_stock(code, name, use_pool=True)
                 return (code, name, result)
             except Exception as e:
                 print(f"⚠️ {stock['code']} {stock['name']} 检查失败: {e}")
@@ -179,6 +189,7 @@ class StockSelector:
                         print(f"⏳ 进度: {completed}/{total_candidates}, 已找到 {found} 只")
 
         finally:
+            close_bs_pool()  # 关闭共享连接池
             select_progress["running"] = False
             select_progress["message"] = f"选股完成，共找到 {len(results)} 只"
 
