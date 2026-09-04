@@ -55,10 +55,11 @@ def get_stock_list(force_refresh: bool = False) -> pd.DataFrame:
             row = rs.get_row_data()
             code = row[0]      # 如 "sh.600000"
             name = row[1]      # 如 "平安银行"
-            status = row[2]    # 1=上市, 0=退市
+            stock_type = row[4]  # 1=股票, 2=指数
+            stock_status = row[5]  # 1=上市, 0=退市
 
-            # 只取上市股票
-            if status == '1':
+            # 只取上市股票（排除指数）
+            if stock_type == '1' and stock_status == '1':
                 # 提取纯数字代码
                 code_num = code.replace('sh.', '').replace('sz.', '').replace('bj.', '')
                 data.append({
