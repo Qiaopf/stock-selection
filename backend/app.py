@@ -194,13 +194,13 @@ async def get_status():
     """获取系统状态"""
     global _cached_results, _cached_time
 
-    # 从缓存文件读取股票数量，避免调用 TuShare API
+    # 从内置股票列表读取数量
     total_stocks = -1
-    cache_file = os.path.join('cache', 'stock_list.csv')
-    if os.path.exists(cache_file):
+    builtin_file = os.path.join(os.path.dirname(__file__), 'stock_list_builtin.csv')
+    if os.path.exists(builtin_file):
         try:
             import pandas as pd
-            df = pd.read_csv(cache_file)
+            df = pd.read_csv(builtin_file)
             total_stocks = len(df)
         except:
             total_stocks = -1
