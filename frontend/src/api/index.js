@@ -2,7 +2,7 @@ import axios from 'axios'
 
 const api = axios.create({
   baseURL: '/api',
-  timeout: 600000  // 10 分钟超时，选股需要遍历几千只股票
+  timeout: 0  // 不设超时，选股耗时较长，前端可以等
 })
 
 // 响应拦截器
