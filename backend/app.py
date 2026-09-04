@@ -310,12 +310,12 @@ async def debug_check_stock(code: str):
             "latest_date": str(df.iloc[-1]['date'].date()),
             "recent_3_days": rows,
             "golden_cross": {
-                "MACD_严格": macd_strict,
-                "MACD_宽松": macd_loose,
-                "KDJ_严格": kdj_strict,
-                "KDJ_宽松": kdj_loose,
-                "双金叉_严格": macd_strict and kdj_strict,
-                "双金叉_宽松": macd_loose and kdj_loose,
+                "MACD_严格": bool(macd_strict),
+                "MACD_宽松": bool(macd_loose),
+                "KDJ_严格": bool(kdj_strict),
+                "KDJ_宽松": bool(kdj_loose),
+                "双金叉_严格": bool(macd_strict and kdj_strict),
+                "双金叉_宽松": bool(macd_loose and kdj_loose),
             }
         }
     except Exception as e:
