@@ -69,7 +69,7 @@ def get_stock_daily(code: str, start_date: Optional[str] = None, end_date: Optio
     if end_date is None:
         end_date = datetime.now().strftime("%Y-%m-%d")
     if start_date is None:
-        start_date = (datetime.now() - timedelta(days=240)).strftime("%Y-%m-%d")
+        start_date = (datetime.now() - timedelta(days=60)).strftime("%Y-%m-%d")
 
     # 确定交易所前缀
     if code.startswith('6'):

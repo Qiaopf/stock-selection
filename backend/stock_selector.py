@@ -37,7 +37,7 @@ def filter_stock_basics(code: str, name: str) -> bool:
 
 
 class StockSelector:
-    def __init__(self, strict_mode: bool = True, min_volume: Optional[float] = None, max_stocks: int = 500):
+    def __init__(self, strict_mode: bool = True, min_volume: Optional[float] = None, max_stocks: int = 99999):
         self.strict_mode = strict_mode
         self.min_volume = min_volume  # 单位: 亿元
         self.max_stocks = max_stocks  # 最多检查的股票数
