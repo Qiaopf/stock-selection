@@ -2,7 +2,7 @@ import axios from 'axios'
 
 const api = axios.create({
   baseURL: '/api',
-  timeout: 300000
+  timeout: 600000  // 10 分钟超时，选股需要遍历几千只股票
 })
 
 // 响应拦截器
@@ -24,6 +24,10 @@ export function getStockDetail(code, name = '') {
 
 export function getStockList() {
   return api.get('/stock-list')
+}
+
+export function getProgress() {
+  return api.get('/stocks/progress')
 }
 
 export function getStatus() {

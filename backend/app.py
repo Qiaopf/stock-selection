@@ -11,7 +11,7 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
 from data_fetcher import get_stock_list, get_stock_daily
-from stock_selector import StockSelector, filter_stock_basics
+from stock_selector import StockSelector, filter_stock_basics, select_progress
 from indicators import (
     calculate_macd, calculate_kdj,
     check_macd_golden_cross, check_macd_strict_golden_cross,
@@ -117,6 +117,12 @@ async def get_filtered_stocks(
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/stocks/progress")
+async def get_select_progress():
+    """获取选股进度（前端轮询用）"""
+    return select_progress
 
 
 @app.get("/api/stock/{code}", response_model=StockDetail)

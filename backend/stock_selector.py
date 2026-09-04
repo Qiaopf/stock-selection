@@ -11,6 +11,15 @@ import pandas as pd
 from typing import List, Dict, Optional
 
 from data_fetcher import get_stock_list, get_stock_daily, _bs_login, _bs_logout
+
+# 选股进度跟踪（供前端轮询）
+select_progress = {
+    "running": False,
+    "total": 0,
+    "current": 0,
+    "found": 0,
+    "message": ""
+}
 from indicators import (
     calculate_macd,
     calculate_kdj,
@@ -122,6 +131,13 @@ class StockSelector:
         results = []
         total_candidates = len(candidates)
 
+        # 初始化进度
+        select_progress["running"] = True
+        select_progress["total"] = total_candidates
+        select_progress["current"] = 0
+        select_progress["found"] = 0
+        select_progress["message"] = f"正在筛选 {total_candidates} 只候选股票..."
+
         # 批量选股时复用 baostock 连接，避免频繁 login/logout
         _bs_login()
         try:
@@ -129,11 +145,15 @@ class StockSelector:
                 code = stock['code']
                 name = stock['name']
 
+                select_progress["current"] = idx + 1
+                select_progress["message"] = f"正在检查 {code} {name} ({idx+1}/{total_candidates})"
+
                 try:
                     # 批量模式：auto_logout=False，由外层统一 logout
                     result = self.screen_one_stock(code, name, auto_logout=False)
                     if result:
                         results.append(result)
+                        select_progress["found"] = len(results)
                         print(f"✅ 找到: {code} {name}")
                 except Exception as e:
                     print(f"⚠️ {code} {name} 检查失败: {e}")
@@ -142,6 +162,8 @@ class StockSelector:
                 if (idx + 1) % 50 == 0:
                     print(f"⏳ 进度: {idx + 1}/{total_candidates}, 已找到 {len(results)} 只")
         finally:
+            select_progress["running"] = False
+            select_progress["message"] = f"选股完成，共找到 {len(results)} 只"
             _bs_logout()
 
         print(f"🏁 选股完成，共找到 {len(results)} 只符合条件的股票")

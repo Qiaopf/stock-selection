@@ -47,6 +47,9 @@
           </a-space>
         </a-card>
 
+        <!-- 进度提示 -->
+        <a-alert v-if="progressText && loading" :message="progressText" type="info" show-icon :closable="false" style="margin-bottom: 16px" />
+
         <!-- 统计信息 -->
         <a-row :gutter="16" class="stats-row">
           <a-col :span="8">
@@ -165,7 +168,7 @@ import {
   DownloadOutlined,
 } from '@ant-design/icons-vue'
 import * as echarts from 'echarts'
-import { getFilteredStocks, getStockDetail } from './api/index.js'
+import { getFilteredStocks, getStockDetail, getProgress } from './api/index.js'
 
 // 语言包
 const locale = zhCN
@@ -174,6 +177,7 @@ const locale = zhCN
 const stocks = ref([])
 const loading = ref(false)
 const searchText = ref('')
+const progressText = ref('')
 const lastUpdateTime = ref('')
 const detailVisible = ref(false)
 const detailLoading = ref(false)
@@ -231,19 +235,33 @@ const filteredStocks = computed(() => {
 // 获取选股结果
 async function fetchStocks() {
   loading.value = true
+  progressText.value = '正在获取股票列表...'
   try {
+    // 启动进度轮询
+    let pollTimer = setInterval(async () => {
+      try {
+        const p = await getProgress()
+        if (p.running) {
+          progressText.value = `正在筛选第 ${p.current}/${p.total} 只，已找到 ${p.found} 只`
+        }
+      } catch (_) { /* ignore polling errors */ }
+    }, 2000)
+
     const result = await getFilteredStocks({
       strict: filters.strict,
       min_volume: filters.min_volume,
       force_refresh: filters.force_refresh
     })
+    clearInterval(pollTimer)
     stocks.value = result
     lastUpdateTime.value = new Date().toLocaleTimeString('zh-CN')
     message.success(`选股完成，共找到 ${result.length} 只符合条件的股票`)
   } catch (err) {
+    progressText.value = ''
     message.error('选股失败: ' + (err.message || '请检查后端服务是否启动'))
   } finally {
     loading.value = false
+    progressText.value = ''
   }
 }
 
