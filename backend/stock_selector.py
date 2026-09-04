@@ -145,7 +145,7 @@ class StockSelector:
             if (idx + 1) % 50 == 0:
                 print(f"⏳ 进度: {idx + 1}/{total_candidates}, 已找到 {len(results)} 只")
 
-            time.sleep(0.15)  # 请求间隔
+            # baostock 无频率限制，不需要请求间隔
 
         print(f"🏁 选股完成，共找到 {len(results)} 只符合条件的股票")
         return results

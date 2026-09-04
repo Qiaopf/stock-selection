@@ -194,16 +194,8 @@ async def get_status():
     """获取系统状态"""
     global _cached_results, _cached_time
 
-    # 从内置股票列表读取数量
+    # baostock 内置股票列表，不需要文件
     total_stocks = -1
-    builtin_file = os.path.join(os.path.dirname(__file__), 'stock_list_builtin.csv')
-    if os.path.exists(builtin_file):
-        try:
-            import pandas as pd
-            df = pd.read_csv(builtin_file)
-            total_stocks = len(df)
-        except:
-            total_stocks = -1
 
     return {
         "status": "running",
@@ -239,14 +231,12 @@ async def debug():
     # 1. 测试导入
     results['imports'] = 'ok'
     
-    # 2. 检查 Tushare Token
-    token = os.environ.get('TUSHARE_TOKEN', '')
-    results['tushare_token'] = '已设置' if token else '未设置'
+    # 2. 检查 baostock
     try:
-        import tushare
-        results['tushare_version'] = tushare.__version__
+        import baostock
+        results['baostock_version'] = baostock.__version__
     except Exception as e:
-        results['tushare_version'] = f"未安装: {e}"
+        results['baostock_version'] = f"未安装: {e}"
     
     # 3. 测试获取股票列表
     try:

@@ -30,11 +30,7 @@ dist-ssr
 
 # Cache
 .cache
-backend/cache/
 .env
 .venv
 env/
 venv/
-
-# 内置股票列表是项目的一部分，需要被提交
-# !backend/stock_list_builtin.csv

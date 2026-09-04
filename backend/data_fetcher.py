@@ -1,111 +1,123 @@
 """
-数据获取模块 - 使用 TuShare 获取 A 股日线数据
+数据获取模块 - 使用 baostock 获取 A 股数据
 
-股票列表使用内置的 stock_list_builtin.csv（可手动更新），
-不依赖 TuShare 的 stock_basic 接口（免费版限频 1次/小时）。
+✅ 无需注册
+✅ 无需 Token
+✅ 无频率限制
+✅ 内置股票列表查询
 
-使用前请先:
-1. 去 https://tushare.pro/register 注册（免费）
-2. 获取你的 Token
-3. 设置环境变量: set TUSHARE_TOKEN=你的token
+安装: pip install baostock
 """
 # 禁用系统代理
 import os
 for key in ['HTTP_PROXY', 'HTTPS_PROXY', 'http_proxy', 'https_proxy', 'ALL_PROXY', 'all_proxy']:
     os.environ.pop(key, None)
 
+import baostock as bs
 import pandas as pd
-import tushare as ts
-import time
 from datetime import datetime, timedelta
 from typing import Optional
-
-# 内置股票列表路径
-BUILTIN_LIST = os.path.join(os.path.dirname(__file__), 'stock_list_builtin.csv')
-
-# 日线数据缓存目录
-CACHE_DIR = os.path.join(os.path.dirname(__file__), 'cache')
-os.makedirs(CACHE_DIR, exist_ok=True)
-
-# 初始化 Tushare
-token = os.environ.get('TUSHARE_TOKEN')
-if token:
-    pro = ts.pro_api(token)
-    print(f"✅ TuShare 初始化成功")
-else:
-    pro = None
-    print("⚠️ 未设置 TUSHARE_TOKEN 环境变量")
-    print("   请去 https://tushare.pro/register 注册获取 Token")
-    print("   然后执行: set TUSHARE_TOKEN=你的token")
 
 
 def get_stock_list(force_refresh: bool = False) -> pd.DataFrame:
     """
     获取 A 股股票列表
 
-    从内置的 stock_list_builtin.csv 读取，不会调用 TuShare 的 stock_basic 接口。
-    如需更新此列表，请重新运行 tools/update_stock_list.py
-
-    Args:
-        force_refresh: 兼容参数，内置列表无需刷新
+    baostock 内置股票列表查询，无频率限制。
+    code 格式: "sh.600000" 或 "sz.000001"
     """
-    if not os.path.exists(BUILTIN_LIST):
-        raise FileNotFoundError(
-            f"内置股票列表 {BUILTIN_LIST} 不存在，请先运行 tools/update_stock_list.py 生成"
-        )
+    lg = bs.login()
+    if lg.error_code != '0':
+        raise ConnectionError(f"baostock 登录失败: {lg.error_msg}")
 
-    df = pd.read_csv(BUILTIN_LIST, encoding='utf-8')
-    # 从 "000686.SZ" 格式提取 "000686"
-    df['代码'] = df['股票代码'].astype(str).str.replace(r'\.(SZ|SH|BJ)$', '', regex=True)
-    df = df.rename(columns={'股票简称': '名称'})
-    print(f"📂 从内置列表读取，共 {len(df)} 只股票")
-    return df[['代码', '名称']]
+    try:
+        rs = bs.query_stock_basic()
+        data = []
+        while rs.next():
+            row = rs.get_row_data()
+            code = row[0]      # 如 "sh.600000"
+            name = row[1]      # 如 "平安银行"
+            status = row[2]    # 1=上市, 0=退市
+
+            # 只取上市股票
+            if status == '1':
+                # 提取纯数字代码
+                code_num = code.replace('sh.', '').replace('sz.', '').replace('bj.', '')
+                data.append({
+                    '代码': code_num,
+                    '名称': name,
+                    'ts_code': code
+                })
+
+        df = pd.DataFrame(data)
+        print(f"📂 从 baostock 获取到 {len(df)} 只上市股票")
+        return df
+
+    finally:
+        bs.logout()
 
 
 def get_stock_daily(code: str, start_date: Optional[str] = None, end_date: Optional[str] = None) -> pd.DataFrame:
     """
-    获取个股日线数据（通过 TuShare daily 接口，仅需 120 积分）
+    获取个股日线数据
 
     Args:
         code: 股票代码，如 "000001"
-        start_date: 开始日期 "20240801"
-        end_date: 结束日期 "20240904"
+        start_date: 开始日期 "2024-08-01"（YYYY-MM-DD 格式）
+        end_date: 结束日期 "2024-09-04"
     """
-    if pro is None:
-        raise ValueError("请先设置 TUSHARE_TOKEN 环境变量")
-
-    # tushare 格式: 000001.SZ / 600000.SH
-    if code.startswith('6'):
-        ts_code = f"{code}.SH"
-    else:
-        ts_code = f"{code}.SZ"
-
     if end_date is None:
-        end_date = datetime.now().strftime("%Y%m%d")
+        end_date = datetime.now().strftime("%Y-%m-%d")
     if start_date is None:
-        start_date = (datetime.now() - timedelta(days=240)).strftime("%Y%m%d")
+        start_date = (datetime.now() - timedelta(days=240)).strftime("%Y-%m-%d")
+
+    # 确定交易所前缀
+    if code.startswith('6'):
+        bs_code = f"sh.{code}"
+    else:
+        bs_code = f"sz.{code}"
+
+    lg = bs.login()
+    if lg.error_code != '0':
+        raise ConnectionError(f"baostock 登录失败: {lg.error_msg}")
 
     try:
-        df = pro.daily(ts_code=ts_code, start_date=start_date, end_date=end_date)
-        if df.empty:
+        rs = bs.query_history_k_data_plus(
+            bs_code,
+            "date,code,open,high,low,close,preclose,volume,amount,pctChg",
+            start_date=start_date,
+            end_date=end_date,
+            frequency="d",
+            adjustflag="3"  # 不复权
+        )
+
+        data = []
+        while rs.next():
+            row = rs.get_row_data()
+            if row[0] == '':
+                continue
+            data.append(row)
+
+        if not data:
             return pd.DataFrame()
 
-        df = df.sort_values('trade_date').reset_index(drop=True)
+        df = pd.DataFrame(data, columns=[
+            'date', 'code', 'open', 'high', 'low', 'close',
+            'pre_close', 'volume', 'amount', 'pct_change'
+        ])
 
-        df.rename(columns={
-            'trade_date': 'date',
-            'vol': 'volume',
-            'pct_chg': 'pct_change'
-        }, inplace=True)
+        # 类型转换
+        for col in ['open', 'high', 'low', 'close', 'pre_close', 'volume', 'amount', 'pct_change']:
+            df[col] = pd.to_numeric(df[col], errors='coerce')
 
-        df['date'] = pd.to_datetime(df['date'], format='%Y%m%d')
-
-        # 单位转换: amount 千元 → 元, volume 百股 → 股
-        df['amount'] = df['amount'] * 1000
-        df['volume'] = df['volume'] * 100
+        df['date'] = pd.to_datetime(df['date'])
+        df = df.sort_values('date').reset_index(drop=True)
 
         return df
 
     except Exception as e:
         print(f"⚠️ 获取 {code} 数据失败: {e}")
         return pd.DataFrame()
+
+    finally:
+        bs.logout()

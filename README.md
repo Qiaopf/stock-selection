@@ -7,7 +7,7 @@
 - **基础过滤**: 从A股中过滤出非ST、非创业板、非科创板股票
 - **技术指标**: 筛选 MACD金叉 和 KDJ金叉 个股
 - **可视化**: 交互式前端界面展示选股结果，带K线图和指标图表
-- **实时数据**: 通过 TuShare 获取最新行情数据
+- **数据源**: baostock（免费、无需注册、无频率限制）
 
 ## 项目结构
 
@@ -17,8 +17,9 @@ stock-selection/
 │   ├── app.py              # FastAPI 主应用
 │   ├── requirements.txt    # Python 依赖
 │   ├── stock_selector.py   # 选股逻辑核心
-│   ├── data_fetcher.py     # 数据获取模块 (TuShare)
-│   └── indicators.py       # MACD/KDJ 指标计算
+│   ├── data_fetcher.py     # 数据获取模块 (baostock)
+│   ├── indicators.py       # MACD/KDJ 指标计算
+│   └── test_baostock.py    # 数据源测试脚本
 ├── frontend/                # Vue3 前端
 │   ├── src/
 │   │   ├── App.vue         # 主页面
@@ -30,25 +31,7 @@ stock-selection/
 
 ## 快速开始
 
-### 1. 获取 TuShare Token
-
-项目使用 TuShare 获取数据，TuShare 数据接口稳定。
-
-1. 注册账号: https://tushare.pro/register （免费）
-2. 在个人中心获取你的 Token
-3. 设置环境变量:
-
-**Windows CMD:**
-```bash
-set TUSHARE_TOKEN=你的token字符串
-```
-
-**Windows PowerShell:**
-```powershell
-$env:TUSHARE_TOKEN="你的token字符串"
-```
-
-### 2. 启动后端
+### 1. 启动后端
 
 ```bash
 cd backend
@@ -60,7 +43,7 @@ python app.py
 
 访问 http://localhost:8000/api/debug 可以测试数据连通性
 
-### 3. 启动前端
+### 2. 启动前端
 
 ```bash
 cd frontend
@@ -87,28 +70,26 @@ npm run dev
    - `strict=false`: 宽松模式，金叉成立状态均可
    - `min_volume`: 过滤最小成交额（单位：亿元）
 
+## 数据源说明
+
+本项目使用 **baostock** 作为数据源：
+
+- ✅ 完全免费，无需注册
+- ✅ 无需 Token，开箱即用
+- ✅ 无频率限制，选股速度快
+- ✅ 覆盖全A股日线行情
+
 ## 技术栈
 
-- **后端**: Python + FastAPI + TuShare + Pandas + NumPy
+- **后端**: Python + FastAPI + baostock + Pandas + NumPy
 - **前端**: Vue3 + Vite + Ant Design Vue + ECharts
-- **数据**: TuShare A股行情数据
+- **数据**: baostock A股行情数据
 
 ## 截图
 
 - 左侧：筛选参数面板
 - 中间：选股结果表格，支持搜索、排序、导出
 - 点击表格行：弹窗展示K线图 + MACD + KDJ 三图联动
-
-## 常见问题
-
-**Q: 获取不到数据？**
-A: 请检查 `TUSHARE_TOKEN` 环境变量是否正确设置，token需要在 https://tushare.pro 获取。
-
-**Q: 选股很慢？**
-A: API有限流限制，每次请求间隔0.15秒，500只股票大约需要1分钟，耐心等待即可。
-
-**Q: 东方财富原来接口为什么不用了？**
-A: 某些网络环境（公司防火墙）会阻止访问东方财富接口，TuShare 更稳定。
 
 ## License
 
