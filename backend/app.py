@@ -32,26 +32,13 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# 缓存选股结果
-_cached_results = None
-_cached_time = None
+# 缓存选股结果（按参数分别缓存）
+_cache = {}
 _CACHE_TTL = 3600  # 缓存有效期 1 小时
 
 
-class StockResult(BaseModel):
-    code: str
-    name: str
-    latest_price: float
-    change_pct: float
-    volume: float
-    amount: float
-    DIF: float
-    DEA: float
-    MACD: float
-    K: float
-    D: float
-    J: float
-    date: str
+def _cache_key(strict: bool, min_volume: float) -> str:
+    return f"{strict}_{min_volume}"
 
 
 class StockDetail(BaseModel):
@@ -85,7 +72,7 @@ def root():
     }
 
 
-@app.get("/api/stocks", response_model=list)
+@app.get("/api/stocks")
 async def get_filtered_stocks(
     strict: bool = Query(True, description="严格模式：仅当日刚金叉"),
     min_volume: float = Query(0.5, description="最小成交额（亿元）"),
@@ -94,21 +81,20 @@ async def get_filtered_stocks(
     """
     获取选股结果：MACD金叉 + KDJ金叉
     """
-    global _cached_results, _cached_time
-
     current_time = time.time()
+    key = _cache_key(strict, min_volume)
 
     # 使用缓存
-    if not force_refresh and _cached_results is not None and _cached_time is not None:
-        if current_time - _cached_time < _CACHE_TTL:
-            return _cached_results
+    if not force_refresh and key in _cache:
+        cached = _cache[key]
+        if current_time - cached['time'] < _CACHE_TTL:
+            return cached['data']
 
     try:
         selector = StockSelector(strict_mode=strict, min_volume=min_volume)
         results = selector.screen_all_stocks()
 
-        _cached_results = results
-        _cached_time = current_time
+        _cache[key] = {'data': results, 'time': current_time}
 
         return results
 
@@ -152,7 +138,7 @@ async def get_stock_detail(
             opens=[round(x, 2) for x in df['open'].tolist()],
             highs=[round(x, 2) for x in df['high'].tolist()],
             lows=[round(x, 2) for x in df['low'].tolist()],
-            volumes=[round(x / 1e4, 2) for x in df['volume'].tolist()],
+            volumes=[round(x / 1e6, 2) for x in df['volume'].tolist()],
             dif=[round(x, 4) for x in df['DIF'].tolist()],
             dea=[round(x, 4) for x in df['DEA'].tolist()],
             macd=[round(x, 4) for x in df['MACD'].tolist()],
@@ -192,16 +178,12 @@ async def get_stock_list_endpoint():
 @app.get("/api/status")
 async def get_status():
     """获取系统状态"""
-    global _cached_results, _cached_time
-
-    # baostock 内置股票列表，不需要文件
-    total_stocks = -1
+    global _cache
 
     return {
         "status": "running",
-        "total_stocks_available": total_stocks,
-        "cached_results": len(_cached_results) if _cached_results else 0,
-        "cache_time": datetime.fromtimestamp(_cached_time).isoformat() if _cached_time else None,
+        "total_stocks_available": -1,
+        "cached_results": sum(len(v['data']) for v in _cache.values()) if _cache else 0,
         "server_time": datetime.now().isoformat()
     }
 
@@ -246,7 +228,6 @@ async def debug():
             'count': len(df),
             'columns': list(df.columns)
         }
-        # 取前3只展示
         sample = df.head(3)
         if '代码' in df.columns:
             results['stock_list']['sample'] = sample[['代码', '名称']].to_dict('records')
@@ -275,7 +256,6 @@ async def debug():
 async def debug_check_stock(code: str):
     """诊断单只股票的金叉情况"""
     try:
-        # 获取数据和计算指标
         df = get_stock_daily(code)
         if df.empty:
             return {"code": code, "error": "无数据"}
@@ -283,7 +263,6 @@ async def debug_check_stock(code: str):
         df = calculate_macd(df)
         df = calculate_kdj(df)
 
-        # 最近3天数据
         recent = df.tail(3)
         rows = []
         for _, row in recent.iterrows():
@@ -298,7 +277,6 @@ async def debug_check_stock(code: str):
                 "J": round(row['J'], 2),
             })
 
-        # 判断金叉
         macd_strict = check_macd_strict_golden_cross(df)
         macd_loose = check_macd_golden_cross(df)
         kdj_strict = check_kdj_strict_golden_cross(df)

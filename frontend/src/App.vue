@@ -89,7 +89,7 @@
             :pagination="{ pageSize: 20, showSizeChanger: true, showTotal: (total) => `共 ${total} 只` }"
             :scroll="{ x: 1200 }"
             size="middle"
-            @row-click="showDetail"
+            @rowClick="showDetail"
             :row-class-name="() => 'clickable-row'"
           >
             <!-- 涨跌幅列 - 颜色标记 -->

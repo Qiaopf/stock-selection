@@ -8,8 +8,6 @@
 5. KDJ 金叉
 """
 import pandas as pd
-import time
-import traceback
 from typing import List, Dict, Optional
 
 from data_fetcher import get_stock_list, get_stock_daily
@@ -44,17 +42,13 @@ class StockSelector:
 
     def screen_one_stock(self, code: str, name: str) -> Optional[Dict]:
         """筛选单只股票"""
-        # 基础过滤
-        if not filter_stock_basics(code, name):
-            return None
-
         # 获取日线数据
         df = get_stock_daily(code)
         if len(df) < 30:
             return None
 
         # 过滤最小成交额
-        if self.min_volume is not None and 'amount' in df.columns:
+        if self.min_volume is not None and self.min_volume > 0 and 'amount' in df.columns:
             latest_amount = df.iloc[-1]['amount'] / 1e8
             if latest_amount < self.min_volume:
                 return None
@@ -73,15 +67,14 @@ class StockSelector:
 
         if macd_golden and kdj_golden:
             latest = df.iloc[-1]
-            prev = df.iloc[-2] if len(df) >= 2 else latest
 
             return {
                 'code': code,
                 'name': name,
                 'latest_price': round(latest['close'], 2),
                 'change_pct': round(latest.get('pct_change', 0), 2),
-                'volume': round(latest.get('volume', 0) / 1e4, 2),
-                'amount': round(latest.get('amount', 0) / 1e8, 2),
+                'volume': round(latest.get('volume', 0) / 1e6, 2),  # 股 → 万手 (1万手=100万股)
+                'amount': round(latest.get('amount', 0) / 1e8, 2),  # 元 → 亿元
                 'DIF': round(latest['DIF'], 4),
                 'DEA': round(latest['DEA'], 4),
                 'MACD': round(latest['MACD'], 4),
@@ -144,8 +137,6 @@ class StockSelector:
             # 进度提示
             if (idx + 1) % 50 == 0:
                 print(f"⏳ 进度: {idx + 1}/{total_candidates}, 已找到 {len(results)} 只")
-
-            # baostock 无频率限制，不需要请求间隔
 
         print(f"🏁 选股完成，共找到 {len(results)} 只符合条件的股票")
         return results
