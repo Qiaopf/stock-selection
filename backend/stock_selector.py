@@ -7,10 +7,21 @@
 4. MACD 金叉
 5. KDJ 金叉
 """
-import pandas as pd
+import threading
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import List, Dict, Optional
 
-from data_fetcher import get_stock_list, get_stock_daily, _bs_login, _bs_logout
+import pandas as pd
+
+from data_fetcher import get_stock_list, get_stock_daily
+from indicators import (
+    calculate_macd,
+    calculate_kdj,
+    check_macd_strict_golden_cross,
+    check_kdj_strict_golden_cross,
+    check_macd_golden_cross,
+    check_kdj_golden_cross
+)
 
 # 选股进度跟踪（供前端轮询）
 select_progress = {
@@ -20,14 +31,7 @@ select_progress = {
     "found": 0,
     "message": ""
 }
-from indicators import (
-    calculate_macd,
-    calculate_kdj,
-    check_macd_strict_golden_cross,
-    check_kdj_strict_golden_cross,
-    check_macd_golden_cross,
-    check_kdj_golden_cross
-)
+_progress_lock = threading.Lock()  # 多线程进度更新锁
 
 
 def filter_stock_basics(code: str, name: str) -> bool:
@@ -49,10 +53,10 @@ class StockSelector:
         self.min_volume = min_volume  # 单位: 亿元
         self.max_stocks = max_stocks  # 最多检查的股票数
 
-    def screen_one_stock(self, code: str, name: str, auto_logout: bool = True) -> Optional[Dict]:
-        """筛选单只股票"""
+    def screen_one_stock(self, code: str, name: str) -> Optional[Dict]:
+        """筛选单只股票（每次调用独立 login/logout，可安全用于多线程）"""
         # 获取日线数据
-        df = get_stock_daily(code, auto_logout=auto_logout)
+        df = get_stock_daily(code)
         if len(df) < 30:
             return None
 
@@ -96,7 +100,7 @@ class StockSelector:
         return None
 
     def screen_all_stocks(self) -> List[Dict]:
-        """全市场选股"""
+        """全市场选股（多线程并发，加速 baostock 查询）"""
         # 获取全部股票列表
         print("📥 正在获取 A 股股票列表...")
         df_all = get_stock_list()
@@ -127,8 +131,6 @@ class StockSelector:
             print(f"⚠️ 限制最多检查 {self.max_stocks} 只")
             candidates = candidates[:self.max_stocks]
 
-        # 逐只检查技术指标
-        results = []
         total_candidates = len(candidates)
 
         # 初始化进度
@@ -138,35 +140,49 @@ class StockSelector:
         select_progress["found"] = 0
         select_progress["message"] = f"正在筛选 {total_candidates} 只候选股票..."
 
-        # 批量选股时复用 baostock 连接，避免频繁 login/logout
-        _bs_login()
-        try:
-            for idx, stock in enumerate(candidates):
+        # 多线程并发查询
+        results = []
+        max_workers = 8  # 并发线程数
+        print(f"🚀 启动 {max_workers} 个线程并发查询...")
+
+        def _check_one(stock):
+            """工作线程函数：检查单只股票，返回 (code, name, result_or_None)"""
+            try:
                 code = stock['code']
                 name = stock['name']
+                result = self.screen_one_stock(code, name)
+                return (code, name, result)
+            except Exception as e:
+                print(f"⚠️ {stock['code']} {stock['name']} 检查失败: {e}")
+                return (stock['code'], stock['name'], None)
 
-                select_progress["current"] = idx + 1
-                select_progress["message"] = f"正在检查 {code} {name} ({idx+1}/{total_candidates})"
+        try:
+            with ThreadPoolExecutor(max_workers=max_workers) as executor:
+                # 提交所有任务
+                futures = {executor.submit(_check_one, stock): stock for stock in candidates}
 
-                try:
-                    # 批量模式：auto_logout=False，由外层统一 logout
-                    result = self.screen_one_stock(code, name, auto_logout=False)
-                    if result:
-                        results.append(result)
-                        select_progress["found"] = len(results)
-                        print(f"✅ 找到: {code} {name}")
-                except Exception as e:
-                    print(f"⚠️ {code} {name} 检查失败: {e}")
+                completed = 0
+                for future in as_completed(futures):
+                    completed += 1
+                    code, name, result = future.result()
 
-                # 进度提示
-                if (idx + 1) % 50 == 0:
-                    print(f"⏳ 进度: {idx + 1}/{total_candidates}, 已找到 {len(results)} 只")
+                    with _progress_lock:
+                        select_progress["current"] = completed
+                        if result:
+                            results.append(result)
+                            select_progress["found"] = len(results)
+
+                    # 进度提示
+                    if completed % 50 == 0:
+                        with _progress_lock:
+                            found = select_progress["found"]
+                        print(f"⏳ 进度: {completed}/{total_candidates}, 已找到 {found} 只")
+
         finally:
             select_progress["running"] = False
             select_progress["message"] = f"选股完成，共找到 {len(results)} 只"
-            _bs_logout()
 
-        print(f"🏁 选股完成，共找到 {len(results)} 只符合条件的股票")
+        print(f"🏁 选股完成（{len(results)} 只），耗时已大幅缩短")
         return results
 
 
