@@ -1,18 +1,43 @@
 """
-数据获取模块 - 使用 akshare 获取 A 股数据
+数据获取模块 - 使用 TuShare 获取 A 股数据
+
+使用前请先:
+1. 去 https://tushare.pro/register 注册（免费）
+2. 获取你的 Token
+3. 设置环境变量: set TUSHARE_TOKEN=你的token
 """
-import akshare as ak
+# 禁用系统代理
+import os
+for key in ['HTTP_PROXY', 'HTTPS_PROXY', 'http_proxy', 'https_proxy', 'ALL_PROXY', 'all_proxy']:
+    os.environ.pop(key, None)
+
 import pandas as pd
+import tushare as ts
 import time
 from datetime import datetime, timedelta
 from typing import Optional
 
+# 初始化 Tushare
+token = os.environ.get('TUSHARE_TOKEN')
+if token:
+    pro = ts.pro_api(token)
+    print(f"✅ TuShare 初始化成功")
+else:
+    pro = None
+    print("⚠️ 未设置 TUSHARE_TOKEN 环境变量")
+    print("   请去 https://tushare.pro/register 注册获取 Token")
+    print("   然后执行: set TUSHARE_TOKEN=你的token")
+
 
 def get_stock_list() -> pd.DataFrame:
-    """获取 A 股股票列表，排除北交所股票"""
-    df = ak.stock_zh_a_spot_em()
-    if df.empty:
-        raise ValueError("获取股票列表失败")
+    """获取 A 股股票列表"""
+    if pro is None:
+        raise ValueError("请先设置 TUSHARE_TOKEN 环境变量")
+
+    df = pro.stock_basic(exchange='', list_status='L',
+                       fields='ts_code,symbol,name,industry,list_date')
+    df = df.rename(columns={'symbol': '代码', 'name': '名称'})
+    print(f"📥 获取到 {len(df)} 只股票")
     return df
 
 
@@ -22,87 +47,44 @@ def get_stock_daily(code: str, start_date: Optional[str] = None, end_date: Optio
 
     Args:
         code: 股票代码，如 "000001"
-        start_date: 开始日期，如 "20240801"
-        end_date: 结束日期，如 "20240904"
-
-    Returns:
-        DataFrame with columns: 日期, 开盘, 收盘, 最高, 最低, 成交量, 成交额
+        start_date: 开始日期 "20240801"
+        end_date: 结束日期 "20240904"
     """
-    # 默认获取最近 120 个交易日
+    if pro is None:
+        raise ValueError("请先设置 TUSHARE_TOKEN 环境变量")
+
+    # tushare 格式: 000001.SZ / 600000.SH
+    if code.startswith('6'):
+        ts_code = f"{code}.SH"
+    else:
+        ts_code = f"{code}.SZ"
+
     if end_date is None:
         end_date = datetime.now().strftime("%Y%m%d")
     if start_date is None:
         start_date = (datetime.now() - timedelta(days=240)).strftime("%Y%m%d")
 
     try:
-        # 判断是沪市还是深市，确定symbol
-        # 深市: 000, 001, 002, 300开头
-        # 沪市: 600, 601, 603, 605, 688开头
-        if code.startswith(('6')):
-            symbol = f"sh{code}"
-        else:
-            symbol = f"sz{code}"
-
-        df = ak.stock_zh_a_hist(symbol=code, period="daily",
-                                start_date=start_date, end_date=end_date,
-                                adjust="qfq")  # 前复权
-
+        df = pro.daily(ts_code=ts_code, start_date=start_date, end_date=end_date)
         if df.empty:
             return pd.DataFrame()
 
-        # 重命名列
+        df = df.sort_values('trade_date').reset_index(drop=True)
+
         df.rename(columns={
-            '日期': 'date',
-            '开盘': 'open',
-            '收盘': 'close',
-            '最高': 'high',
-            '最低': 'low',
-            '成交量': 'volume',
-            '成交额': 'amount',
-            '振幅': 'amplitude',
-            '涨跌幅': 'pct_change',
-            '涨跌额': 'change',
-            '换手率': 'turnover'
+            'trade_date': 'date',
+            'vol': 'volume',
+            'pct_chg': 'pct_change'
         }, inplace=True)
 
-        df['date'] = pd.to_datetime(df['date'])
-        df.sort_values('date', inplace=True)
-        df.reset_index(drop=True, inplace=True)
+        df['date'] = pd.to_datetime(df['date'], format='%Y%m%d')
+
+        # 单位转换: amount 千元 → 元, volume 百股 → 股
+        df['amount'] = df['amount'] * 1000
+        df['volume'] = df['volume'] * 100
 
         return df
 
     except Exception as e:
-        print(f"获取 {code} 数据失败: {e}")
+        print(f"⚠️ 获取 {code} 数据失败: {e}")
         return pd.DataFrame()
-
-
-def batch_get_stock_daily(codes: list, max_workers: int = 5) -> dict:
-    """
-    批量获取多只股票日线数据
-
-    Args:
-        codes: 股票代码列表
-        max_workers: 最大并发数
-
-    Returns:
-        {code: DataFrame}
-    """
-    result = {}
-    total = len(codes)
-
-    for i, code in enumerate(codes):
-        if i % 10 == 0:
-            print(f"进度: {i}/{total}")
-        df = get_stock_daily(code)
-        if not df.empty:
-            result[code] = df
-        time.sleep(0.3)  # 避免请求过快
-
-    return result
-
-
-if __name__ == "__main__":
-    # 测试
-    df_list = get_stock_list()
-    print(f"获取到 {len(df_list)} 只股票")
-    print(df_list.head())

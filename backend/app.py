@@ -2,6 +2,7 @@
 FastAPI 主应用 - 量化选股系统后端
 """
 import json
+import os
 import time
 import traceback
 from typing import Optional
@@ -234,12 +235,14 @@ async def debug():
     # 1. 测试导入
     results['imports'] = 'ok'
     
-    # 2. 测试 akshare 版本
+    # 2. 检查 Tushare Token
+    token = os.environ.get('TUSHARE_TOKEN', '')
+    results['tushare_token'] = '已设置' if token else '未设置'
     try:
-        import akshare
-        results['akshare_version'] = akshare.__version__
+        import tushare
+        results['tushare_version'] = tushare.__version__
     except Exception as e:
-        results['akshare_version'] = f"失败: {e}"
+        results['tushare_version'] = f"未安装: {e}"
     
     # 3. 测试获取股票列表
     try:
