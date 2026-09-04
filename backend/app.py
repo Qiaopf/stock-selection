@@ -15,7 +15,7 @@ from pydantic import BaseModel
 
 from data_fetcher import get_stock_list, get_stock_daily
 from stock_selector import StockSelector, filter_stock_basics
-from indicators import calculate_macd, calculate_kdj
+from indicators import calculate_macd, calculate_kdj, check_macd_golden_cross, check_macd_strict_golden_cross, check_kdj_golden_cross, check_kdj_strict_golden_cross
 
 app = FastAPI(
     title="量化选股系统",
@@ -268,6 +268,59 @@ async def debug():
         results['stock_daily'] = {'status': '失败', 'error': str(e)}
     
     return results
+
+
+# ========== 个股金叉诊断接口 ==========
+@app.get("/api/debug/check/{code}")
+async def debug_check_stock(code: str):
+    """诊断单只股票的金叉情况"""
+    try:
+        # 获取数据和计算指标
+        df = get_stock_daily(code)
+        if df.empty:
+            return {"code": code, "error": "无数据"}
+
+        df = calculate_macd(df)
+        df = calculate_kdj(df)
+
+        # 最近3天数据
+        recent = df.tail(3)
+        rows = []
+        for _, row in recent.iterrows():
+            rows.append({
+                "date": str(row['date'].date()),
+                "close": round(row['close'], 3),
+                "DIF": round(row['DIF'], 4),
+                "DEA": round(row['DEA'], 4),
+                "MACD": round(row['MACD'], 4),
+                "K": round(row['K'], 2),
+                "D": round(row['D'], 2),
+                "J": round(row['J'], 2),
+            })
+
+        # 判断金叉
+        macd_strict = check_macd_strict_golden_cross(df)
+        macd_loose = check_macd_golden_cross(df)
+        kdj_strict = check_kdj_strict_golden_cross(df)
+        kdj_loose = check_kdj_golden_cross(df)
+
+        return {
+            "code": code,
+            "total_days": len(df),
+            "latest_date": str(df.iloc[-1]['date'].date()),
+            "recent_3_days": rows,
+            "golden_cross": {
+                "MACD_严格": macd_strict,
+                "MACD_宽松": macd_loose,
+                "KDJ_严格": kdj_strict,
+                "KDJ_宽松": kdj_loose,
+                "双金叉_严格": macd_strict and kdj_strict,
+                "双金叉_宽松": macd_loose and kdj_loose,
+            }
+        }
+    except Exception as e:
+        tb = traceback.format_exc()
+        return {"code": code, "error": str(e), "traceback": tb.split('\n')[-10:]}
 
 
 if __name__ == "__main__":
