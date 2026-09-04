@@ -3,11 +3,13 @@ FastAPI 主应用 - 量化选股系统后端
 """
 import json
 import time
+import traceback
 from typing import Optional
 from datetime import datetime
 
-from fastapi import FastAPI, Query, HTTPException
+from fastapi import FastAPI, Query, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
 from data_fetcher import get_stock_list, get_stock_daily
@@ -207,6 +209,73 @@ async def get_status():
     }
 
 
+# ========== 全局异常处理器 ==========
+@app.exception_handler(Exception)
+async def global_exception_handler(request: Request, exc: Exception):
+    """全局异常捕获，返回详细错误信息"""
+    tb = traceback.format_exc()
+    print(f"❌ 错误: {str(exc)}")
+    print(f"📋 详细堆栈:\n{tb}")
+    return JSONResponse(
+        status_code=500,
+        content={
+            "error": str(exc),
+            "traceback": tb.split('\n')[-20:]  # 返回最后20行堆栈
+        }
+    )
+
+
+# ========== 调试接口 ==========
+@app.get("/api/debug")
+async def debug():
+    """调试接口，测试数据源连通性"""
+    results = {}
+    
+    # 1. 测试导入
+    results['imports'] = 'ok'
+    
+    # 2. 测试 akshare 版本
+    try:
+        import akshare
+        results['akshare_version'] = akshare.__version__
+    except Exception as e:
+        results['akshare_version'] = f"失败: {e}"
+    
+    # 3. 测试获取股票列表
+    try:
+        df = get_stock_list()
+        results['stock_list'] = {
+            'status': 'ok',
+            'count': len(df),
+            'columns': list(df.columns)
+        }
+        # 取前3只展示
+        sample = df.head(3)
+        if '代码' in df.columns:
+            results['stock_list']['sample'] = sample[['代码', '名称']].to_dict('records')
+        else:
+            results['stock_list']['sample'] = str(sample.to_dict('records'))
+    except Exception as e:
+        tb = traceback.format_exc()
+        results['stock_list'] = {'status': '失败', 'error': str(e), 'traceback': tb.split('\n')[-10:]}
+    
+    # 4. 测试获取单只股票日线
+    try:
+        df_daily = get_stock_daily('000001')
+        results['stock_daily'] = {
+            'status': 'ok' if not df_daily.empty else 'empty',
+            'rows': len(df_daily),
+            'columns': list(df_daily.columns) if not df_daily.empty else []
+        }
+    except Exception as e:
+        results['stock_daily'] = {'status': '失败', 'error': str(e)}
+    
+    return results
+
+
 if __name__ == "__main__":
     import uvicorn
+    print("🚀 启动量化选股系统后端...")
+    print("📡 地址: http://localhost:8000")
+    print("🔍 调试接口: http://localhost:8000/api/debug")
     uvicorn.run(app, host="0.0.0.0", port=8000)
