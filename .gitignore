@@ -30,6 +30,7 @@ dist-ssr
 
 # Cache
 .cache
+backend/cache/
 .env
 .venv
 env/

@@ -194,12 +194,16 @@ async def get_status():
     """获取系统状态"""
     global _cached_results, _cached_time
 
-    # 尝试获取股票列表验证连通性
-    try:
-        df = get_stock_list()
-        total_stocks = len(df)
-    except Exception as e:
-        total_stocks = -1
+    # 从缓存文件读取股票数量，避免调用 TuShare API
+    total_stocks = -1
+    cache_file = os.path.join('cache', 'stock_list.csv')
+    if os.path.exists(cache_file):
+        try:
+            import pandas as pd
+            df = pd.read_csv(cache_file)
+            total_stocks = len(df)
+        except:
+            total_stocks = -1
 
     return {
         "status": "running",
