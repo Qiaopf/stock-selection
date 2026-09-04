@@ -49,18 +49,15 @@
 
         <!-- 统计信息 -->
         <a-row :gutter="16" class="stats-row">
-          <a-col :span="6">
-            <a-statistic title="符合条件的股票" :value="stocks.length" :value-style="{ color: '#1890ff' }">
+          <a-col :span="8">
+            <a-statistic title="双金叉选股结果" :value="stocks.length" :value-style="{ color: '#1890ff' }">
               <template #prefix><StockOutlined /></template>
             </a-statistic>
           </a-col>
-          <a-col :span="6">
-            <a-statistic title="MACD 金叉" :value="stocks.length" :value-style="{ color: '#52c41a' }" />
+          <a-col :span="8">
+            <a-statistic title="选股模式" :value="filters.strict ? '严格（当日金叉）' : '宽松（金叉状态）'" />
           </a-col>
-          <a-col :span="6">
-            <a-statistic title="KDJ 金叉" :value="stocks.length" :value-style="{ color: '#52c41a' }" />
-          </a-col>
-          <a-col :span="6">
+          <a-col :span="8">
             <a-statistic title="数据更新时间" :value="lastUpdateTime" />
           </a-col>
         </a-row>
@@ -159,8 +156,9 @@
 </template>
 
 <script setup>
-import { ref, reactive, computed, onMounted, watch, nextTick } from 'vue'
+import { ref, reactive, computed, onMounted, onUnmounted, watch, nextTick } from 'vue'
 import { message } from 'ant-design-vue'
+import zhCN from 'ant-design-vue/es/locale/zh_CN'
 import {
   ReloadOutlined,
   StockOutlined,
@@ -168,6 +166,9 @@ import {
 } from '@ant-design/icons-vue'
 import * as echarts from 'echarts'
 import { getFilteredStocks, getStockDetail } from './api/index.js'
+
+// 语言包
+const locale = zhCN
 
 // 状态
 const stocks = ref([])
@@ -190,6 +191,7 @@ const kdjChartRef = ref(null)
 let klineChart = null
 let macdChart = null
 let kdjChart = null
+const resizeHandlers = []
 
 // 筛选条件
 const filters = reactive({
@@ -252,9 +254,9 @@ function onSearch() {
 
 // 导出 CSV
 function exportData() {
-  const headers = ['股票代码', '股票名称', '最新价', '涨跌幅', '成交额(亿)', 'DIF', 'DEA', 'MACD', 'K值', 'D值', 'J值']
+  const headers = ['股票代码', '股票名称', '最新价', '涨跌幅', '成交额(亿)', '成交量(万手)', 'DIF', 'DEA', 'MACD', 'K值', 'D值', 'J值']
   const rows = filteredStocks.value.map(s => [
-    s.code, s.name, s.latest_price, s.change_pct, s.amount,
+    s.code, s.name, s.latest_price, s.change_pct, s.amount, s.volume,
     s.DIF, s.DEA, s.MACD, s.K, s.D, s.J
   ])
   const csv = [headers.join(','), ...rows.map(r => r.join(','))].join('\n')
@@ -375,7 +377,9 @@ function renderKlineChart(data) {
   }
 
   klineChart.setOption(option)
-  window.addEventListener('resize', () => klineChart.resize())
+  const handler = () => klineChart.resize()
+  window.addEventListener('resize', handler)
+  resizeHandlers.push(handler)
 }
 
 function renderMacdChart(data) {
@@ -422,7 +426,9 @@ function renderMacdChart(data) {
   }
 
   macdChart.setOption(option)
-  window.addEventListener('resize', () => macdChart.resize())
+  const handler = () => macdChart.resize()
+  window.addEventListener('resize', handler)
+  resizeHandlers.push(handler)
 }
 
 function renderKdjChart(data) {
@@ -485,13 +491,19 @@ function renderKdjChart(data) {
   }
 
   kdjChart.setOption(option)
-  window.addEventListener('resize', () => kdjChart.resize())
+  const handler = () => kdjChart.resize()
+  window.addEventListener('resize', handler)
+  resizeHandlers.push(handler)
 }
 
 // 监听弹窗关闭销毁图表
 watch(detailVisible, (val) => {
   if (!val) {
     setTimeout(() => {
+      // 移除 resize 事件监听
+      resizeHandlers.forEach(h => window.removeEventListener('resize', h))
+      resizeHandlers.length = 0
+      // 销毁图表实例
       if (klineChart) { klineChart.dispose(); klineChart = null }
       if (macdChart) { macdChart.dispose(); macdChart = null }
       if (kdjChart) { kdjChart.dispose(); kdjChart = null }
@@ -502,6 +514,15 @@ watch(detailVisible, (val) => {
 // 自动加载
 onMounted(() => {
   fetchStocks()
+})
+
+// 组件卸载时清理
+onUnmounted(() => {
+  resizeHandlers.forEach(h => window.removeEventListener('resize', h))
+  resizeHandlers.length = 0
+  if (klineChart) klineChart.dispose()
+  if (macdChart) macdChart.dispose()
+  if (kdjChart) kdjChart.dispose()
 })
 </script>
 

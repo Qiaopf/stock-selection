@@ -1,11 +1,8 @@
 """
 FastAPI 主应用 - 量化选股系统后端
 """
-import json
-import os
 import time
 import traceback
-from typing import Optional
 from datetime import datetime
 
 from fastapi import FastAPI, Query, HTTPException, Request
@@ -15,7 +12,11 @@ from pydantic import BaseModel
 
 from data_fetcher import get_stock_list, get_stock_daily
 from stock_selector import StockSelector, filter_stock_basics
-from indicators import calculate_macd, calculate_kdj, check_macd_golden_cross, check_macd_strict_golden_cross, check_kdj_golden_cross, check_kdj_strict_golden_cross
+from indicators import (
+    calculate_macd, calculate_kdj,
+    check_macd_golden_cross, check_macd_strict_golden_cross,
+    check_kdj_golden_cross, check_kdj_strict_golden_cross
+)
 
 app = FastAPI(
     title="量化选股系统",
@@ -39,6 +40,22 @@ _CACHE_TTL = 3600  # 缓存有效期 1 小时
 
 def _cache_key(strict: bool, min_volume: float) -> str:
     return f"{strict}_{min_volume}"
+
+
+# 缓存股票列表（避免个股详情接口重复调用 baostock）
+_stock_list_cache = None
+_stock_list_cache_time = 0
+_STOCK_LIST_CACHE_TTL = 300  # 5 分钟
+
+
+def _get_stock_list_cached():
+    """获取缓存的股票列表，5 分钟内不再重复请求 baostock"""
+    global _stock_list_cache, _stock_list_cache_time
+    now = time.time()
+    if _stock_list_cache is None or now - _stock_list_cache_time > _STOCK_LIST_CACHE_TTL:
+        _stock_list_cache = get_stock_list()
+        _stock_list_cache_time = now
+    return _stock_list_cache
 
 
 class StockDetail(BaseModel):
@@ -119,10 +136,10 @@ async def get_stock_detail(
         df = calculate_macd(df)
         df = calculate_kdj(df)
 
-        # 获取名称
+        # 获取名称（使用缓存，避免重复调用 baostock）
         if not name:
             try:
-                df_list = get_stock_list()
+                df_list = _get_stock_list_cached()
                 if '代码' in df_list.columns:
                     match = df_list[df_list['代码'] == code]
                     if not match.empty:

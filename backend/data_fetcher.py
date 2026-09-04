@@ -18,6 +18,27 @@ import pandas as pd
 from datetime import datetime, timedelta
 from typing import Optional
 
+# baostock 连接状态管理 - 避免频繁 login/logout
+_bs_logged_in = False
+
+
+def _bs_login():
+    """带状态跟踪的 baostock 登录"""
+    global _bs_logged_in
+    if not _bs_logged_in:
+        lg = bs.login()
+        if lg.error_code != '0':
+            raise ConnectionError(f"baostock 登录失败: {lg.error_msg}")
+        _bs_logged_in = True
+
+
+def _bs_logout():
+    """带状态跟踪的 baostock 登出"""
+    global _bs_logged_in
+    if _bs_logged_in:
+        bs.logout()
+        _bs_logged_in = False
+
 
 def get_stock_list(force_refresh: bool = False) -> pd.DataFrame:
     """
@@ -26,10 +47,7 @@ def get_stock_list(force_refresh: bool = False) -> pd.DataFrame:
     baostock 内置股票列表查询，无频率限制。
     code 格式: "sh.600000" 或 "sz.000001"
     """
-    lg = bs.login()
-    if lg.error_code != '0':
-        raise ConnectionError(f"baostock 登录失败: {lg.error_msg}")
-
+    _bs_login()
     try:
         rs = bs.query_stock_basic()
         data = []
@@ -54,10 +72,10 @@ def get_stock_list(force_refresh: bool = False) -> pd.DataFrame:
         return df
 
     finally:
-        bs.logout()
+        _bs_logout()
 
 
-def get_stock_daily(code: str, start_date: Optional[str] = None, end_date: Optional[str] = None) -> pd.DataFrame:
+def get_stock_daily(code: str, start_date: Optional[str] = None, end_date: Optional[str] = None, auto_logout: bool = True) -> pd.DataFrame:
     """
     获取个股日线数据
 
@@ -77,10 +95,7 @@ def get_stock_daily(code: str, start_date: Optional[str] = None, end_date: Optio
     else:
         bs_code = f"sz.{code}"
 
-    lg = bs.login()
-    if lg.error_code != '0':
-        raise ConnectionError(f"baostock 登录失败: {lg.error_msg}")
-
+    _bs_login()
     try:
         rs = bs.query_history_k_data_plus(
             bs_code,
@@ -120,4 +135,5 @@ def get_stock_daily(code: str, start_date: Optional[str] = None, end_date: Optio
         return pd.DataFrame()
 
     finally:
-        bs.logout()
+        if auto_logout:
+            _bs_logout()

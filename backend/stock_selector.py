@@ -10,7 +10,7 @@
 import pandas as pd
 from typing import List, Dict, Optional
 
-from data_fetcher import get_stock_list, get_stock_daily
+from data_fetcher import get_stock_list, get_stock_daily, _bs_login, _bs_logout
 from indicators import (
     calculate_macd,
     calculate_kdj,
@@ -40,10 +40,10 @@ class StockSelector:
         self.min_volume = min_volume  # 单位: 亿元
         self.max_stocks = max_stocks  # 最多检查的股票数
 
-    def screen_one_stock(self, code: str, name: str) -> Optional[Dict]:
+    def screen_one_stock(self, code: str, name: str, auto_logout: bool = True) -> Optional[Dict]:
         """筛选单只股票"""
         # 获取日线数据
-        df = get_stock_daily(code)
+        df = get_stock_daily(code, auto_logout=auto_logout)
         if len(df) < 30:
             return None
 
@@ -122,21 +122,27 @@ class StockSelector:
         results = []
         total_candidates = len(candidates)
 
-        for idx, stock in enumerate(candidates):
-            code = stock['code']
-            name = stock['name']
+        # 批量选股时复用 baostock 连接，避免频繁 login/logout
+        _bs_login()
+        try:
+            for idx, stock in enumerate(candidates):
+                code = stock['code']
+                name = stock['name']
 
-            try:
-                result = self.screen_one_stock(code, name)
-                if result:
-                    results.append(result)
-                    print(f"✅ 找到: {code} {name}")
-            except Exception as e:
-                print(f"⚠️ {code} {name} 检查失败: {e}")
+                try:
+                    # 批量模式：auto_logout=False，由外层统一 logout
+                    result = self.screen_one_stock(code, name, auto_logout=False)
+                    if result:
+                        results.append(result)
+                        print(f"✅ 找到: {code} {name}")
+                except Exception as e:
+                    print(f"⚠️ {code} {name} 检查失败: {e}")
 
-            # 进度提示
-            if (idx + 1) % 50 == 0:
-                print(f"⏳ 进度: {idx + 1}/{total_candidates}, 已找到 {len(results)} 只")
+                # 进度提示
+                if (idx + 1) % 50 == 0:
+                    print(f"⏳ 进度: {idx + 1}/{total_candidates}, 已找到 {len(results)} 只")
+        finally:
+            _bs_logout()
 
         print(f"🏁 选股完成，共找到 {len(results)} 只符合条件的股票")
         return results
